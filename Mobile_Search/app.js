@@ -110,9 +110,9 @@ app.post('/api/properties/search', async (req, res) => {
     // Nhận tham số tìm kiếm từ SearchField object
     const {
       propertyName,            // Tìm kiếm theo tên
-      city_code,               // Lọc theo thành phố
-      district_code,           // Lọc theo quận/huyện
-      ward_code,               // Lọc theo phường/xã
+      city_codes = [],         // Mảng city_code để lọc
+      district_codes = [],     // Mảng district_code để lọc
+      ward_codes = [],         // Mảng ward_code để lọc  
       max_guest,               // Lọc theo số khách tối đa
       bed_rooms,               // Lọc theo số phòng ngủ
       min_price,               // Lọc theo giá tối thiểu
@@ -127,8 +127,8 @@ app.post('/api/properties/search', async (req, res) => {
       bbq,                     // BBQ
       wifi,                    // Wifi
       airConditioner,          // Điều hòa
-      page = 0,                // Trang hiện tại (bổ sung)
-      hitsPerPage = 20         // Số kết quả mỗi trang (bổ sung)
+      page = 0,                // Trang hiện tại
+      hitsPerPage = 20         // Số kết quả mỗi trang
     } = req.body;
 
     // Xây dựng các bộ lọc
@@ -138,10 +138,29 @@ app.post('/api/properties/search', async (req, res) => {
     // Nếu không có propertyName hoặc là chuỗi rỗng, sẽ tìm tất cả
     const query = propertyName || '';
     
-    // Lọc theo địa điểm - chỉ áp dụng nếu giá trị > 0
-    if (city_code && city_code > 0) filters.push(`city_code:${city_code}`);
-    if (district_code && district_code > 0) filters.push(`district_code:${district_code}`);
-    if (ward_code && ward_code > 0) filters.push(`ward_code:${ward_code}`);
+    // Xử lý lọc theo city_codes, district_codes và ward_codes
+    
+    // Xử lý city_codes - sử dụng cú pháp Algolia chính xác hơn
+    if (Array.isArray(city_codes) && city_codes.length > 0) {
+      // Cách 1: Sử dụng để so sánh chính xác từng giá trị
+      const cityFilter = city_codes.map(code => `city_code:${code}`).join(' OR ');
+      if (cityFilter) filters.push(`(${cityFilter})`);
+      
+      // Cách 2 (thay thế): Sử dụng toán tử 'IN' của Algolia
+      // filters.push(`city_code:${city_codes.join(' OR city_code:')}`);
+    }
+    
+    // Xử lý district_codes - tách riêng ra khỏi city_codes
+    if (Array.isArray(district_codes) && district_codes.length > 0) {
+      const districtFilter = district_codes.map(code => `district_code:${code}`).join(' OR ');
+      if (districtFilter) filters.push(`(${districtFilter})`);
+    }
+    
+    // Xử lý ward_codes - tách riêng ra khỏi city_codes và district_codes
+    if (Array.isArray(ward_codes) && ward_codes.length > 0) {
+      const wardFilter = ward_codes.map(code => `ward_code:${code}`).join(' OR ');
+      if (wardFilter) filters.push(`(${wardFilter})`);
+    }
     
     // Lọc theo số khách và phòng ngủ - chỉ áp dụng nếu giá trị > 0
     if (max_guest && max_guest > 0) filters.push(`max_guest >= ${max_guest}`);
@@ -171,7 +190,6 @@ app.post('/api/properties/search', async (req, res) => {
       let currentDate = new Date(startDate);
       
       // Tạo filter phức tạp để đảm bảo không có ngày nào trong khoảng đã được đặt
-      // Cách này dựa vào Algolia's filter syntax: NOT bookedDate:date1 AND NOT bookedDate:date2...
       while (currentDate <= endDate) {
         const dateString = currentDate.toISOString().split('T')[0];
         filters.push(`NOT bookedDate:${dateString}`);
@@ -181,6 +199,7 @@ app.post('/api/properties/search', async (req, res) => {
 
     // Tạo filter string từ mảng filters
     const filterStr = filters.length > 0 ? filters.join(' AND ') : '';
+    console.log('Filter string:', filterStr);
 
     // Cấu hình tìm kiếm
     const searchParams = {
@@ -205,61 +224,6 @@ app.post('/api/properties/search', async (req, res) => {
     });
   }
 });
-
-app.get('/api/test-search', async (req, res) => {
-  try {
-    const {
-      propertyName = 'villa',
-      city_code = "26",
-      district_code,
-      ward_code,
-      max_guest,
-      bed_rooms,
-      min_price,
-      max_price,
-      tv,
-      wifi,
-      petAllowance,
-      page = 0,
-      hitsPerPage = 10
-    } = req.query;
-
-    let filters = [];
-
-    if (city_code) filters.push(`city_code:${city_code}`);
-    if (district_code) filters.push(`district_code:${district_code}`);
-    if (ward_code) filters.push(`ward_code:${ward_code}`);
-    if (max_guest) filters.push(`max_guest >= ${max_guest}`);
-    if (bed_rooms) filters.push(`bed_rooms >= ${bed_rooms}`);
-    if (min_price) filters.push(`price >= ${min_price}`);
-    if (max_price) filters.push(`price <= ${max_price}`);
-
-    if (tv === 'true') filters.push(`tv:true`);
-    if (wifi === 'true') filters.push(`wifi:true`);
-    if (petAllowance === 'true') filters.push(`petAllowance:true`);
-
-    const filterStr = filters.length > 0 ? filters.join(' AND ') : '';
-
-    const searchResults = await propertyIndex.search(propertyName, {
-      filters: filterStr,
-      page: parseInt(page),
-      hitsPerPage: parseInt(hitsPerPage)
-    });
-
-    res.status(200).json({
-      success: true,
-      results: searchResults
-    });
-  } catch (error) {
-    console.error('Error in test search:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Test search failed',
-      error: error.message
-    });
-  }
-});
-
 
 app.get('/' , async (req, res) => {
   res.send("This is Search Property Server!")
