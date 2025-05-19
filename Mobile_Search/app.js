@@ -128,7 +128,7 @@ app.post('/api/properties/search', async (req, res) => {
       wifi,                    // Wifi
       airConditioner,          // Điều hòa
       page = 0,                // Trang hiện tại
-      hitsPerPage = 20         // Số kết quả mỗi trang
+      hitsPerPage = 50         // Số kết quả mỗi trang
     } = req.body;
 
     // Xây dựng các bộ lọc
